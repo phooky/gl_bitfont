@@ -1,0 +1,10 @@
+[package]
+name = "gl_bitfont"
+version = "0.1.0"
+authors = ["Adam Mayer <phooky@gmail.com>"]
+
+[dependencies]
+gl="0.6.3"
+
+[dev-dependencies]
+glfw="0.17.0"
