@@ -50,7 +50,7 @@ impl<'a> Terminal<'a> {
 		let mut vbo : GLuint = 0;
 		let mut data : Vec<u8> = Vec::new();
 		let d = (dimensions.0 as f32, dimensions.1 as f32);
-		data.resize(dimensions.0 as usize * dimensions.1 as usize, 0);
+		data.resize(dimensions.0 as usize * dimensions.1 as usize, 32);
 		let vertices : [GLfloat; 4 * 4] = [
 			1.0 , 1.0,   d.0, 0.0,
 			-1.0, 1.0,   0.0, 0.0, 
@@ -87,12 +87,17 @@ impl<'a> Terminal<'a> {
 			vao : vao,
 		}
 	}
-	pub fn write(&mut self, x : usize, y : usize, text : &str) {
+	pub fn write_str(&mut self, x : usize, y : usize, text : &str) {
 		let mut idx = x + y*self.dim.0 as usize;
 		for c in text.bytes() {
 			self.data[idx] = c as u8;
 			idx = idx + 1;
 		}
+	}
+	
+	pub fn write_char(&mut self, x : usize, y : usize, c : char) {
+		let mut idx = x + y*self.dim.0 as usize;
+		self.data[idx] = c as u8;
 	}
 
 	pub fn render(&self) {
