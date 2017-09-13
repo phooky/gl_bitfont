@@ -38,10 +38,11 @@ pub struct LoadedFont {
 /// An area to render text into, along with the current contents
 /// of the text
 pub struct Terminal<'a> {
-	dim : (u8,u8),  /// The dimensions, in characters, of this terminal
-	data : Vec<u8>, /// The data to be displayed
+	pub dim : (u8,u8),  /// The dimensions, in characters, of this terminal
+	pub data : Vec<u8>, /// The data to be displayed
 	font : &'a LoadedFont,
 	vao : GLuint,
+	pub cursor : (u8, u8),
 }
 
 impl<'a> Terminal<'a> {
@@ -85,19 +86,76 @@ impl<'a> Terminal<'a> {
 			data : data,
 			font : font,
 			vao : vao,
+			cursor : (0,0),
 		}
 	}
-	pub fn write_str(&mut self, x : usize, y : usize, text : &str) {
+
+	pub fn copy_line(&mut self, from : i8, to : i8) {
+		let to_idx = self.dim.0 as usize * to as usize;
+		let from_idx = self.dim.0 as usize * from as usize;
+		for n in 0..self.dim.0 as usize{
+			self.data[to_idx + n] = self.data[from_idx + n];
+		}
+	}
+
+	pub fn blank_line(&mut self, line_no : i8) {
+		let idx = self.dim.0 as usize * line_no as usize;
+		for n in 0..self.dim.0 as usize{
+			self.data[idx + n] = 32;
+		}
+	}
+
+	pub fn scroll(&mut self, lines : i8) {
+		match lines {
+			0 => {},
+			x if x > self.dim.1 as i8 => {},
+			x if x < -(self.dim.1 as i8) => {},
+			x if x > 0 => {
+				for n in 0..(self.dim.1 as i8) {
+					if n < self.dim.1 as i8-x {
+						self.copy_line(n+x,n);
+					} else {
+						self.blank_line(n);
+					}
+				}
+			},
+			x if x < 0 => {
+				for n in (0..(self.dim.1 as i8)).rev() {
+					if n >= -x { 
+						self.copy_line(n+x,n);
+					} else {
+						self.blank_line(n);
+					}
+				}				
+			},
+			_ => {},
+		}
+	}
+
+	pub fn write_str_at(&mut self, x : usize, y : usize, text : &str) {
 		let mut idx = x + y*self.dim.0 as usize;
 		for c in text.bytes() {
 			self.data[idx] = c as u8;
 			idx = idx + 1;
 		}
 	}
-	
-	pub fn write_char(&mut self, x : usize, y : usize, c : char) {
+
+	pub fn write_char_at(&mut self, x : usize, y : usize, c : char) {
 		let mut idx = x + y*self.dim.0 as usize;
 		self.data[idx] = c as u8;
+	}
+
+	pub fn write_char(&mut self, c : char) {
+		let x = self.cursor.0 as usize;
+		let y = self.cursor.1 as usize;
+		self.write_char_at(x, y, c);
+		self.cursor.0 += 1;
+		if self.cursor.0 >= self.dim.0 { 
+			self.cursor.0 = 0; self.cursor.1 += 1;
+			if self.cursor.1 >= self.dim.1 {
+				self.scroll(1); self.cursor.1 -= 1;
+			}
+		}
 	}
 
 	pub fn render(&self) {
@@ -110,7 +168,7 @@ impl<'a> Terminal<'a> {
 			// Set uniform for text?
 			let c_str = std::ffi::CString::new("data".as_bytes()).unwrap();
 			let loc = gl::GetUniformLocation(p,c_str.as_ptr());
-			gl::Uniform1uiv(loc,80*24,self.data.as_ptr() as *const _);
+			gl::Uniform1uiv(loc,40*24,self.data.as_ptr() as *const _);
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
 		}
 	}

@@ -41,7 +41,7 @@ fn main() {
 					_ => {},
 				},
 				glfw::WindowEvent::Char(c) => { 
-					t.write_char(cursor.0,cursor.1,c);
+					t.write_char_at(cursor.0,cursor.1,c);
 					cursor.0 = cursor.0 + 1;
 				},
 				_ => {},
