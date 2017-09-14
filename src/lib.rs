@@ -42,6 +42,7 @@ pub struct Terminal<'a> {
 	pub data : Vec<u8>, /// The data to be displayed
 	font : &'a LoadedFont,
 	vao : GLuint,
+	data_texture : GLuint,
 	pub cursor : (u8, u8),
 }
 
@@ -58,6 +59,7 @@ impl<'a> Terminal<'a> {
 			1.0 ,-1.0,   d.0, d.1,
 			-1.0,-1.0,   0.0, d.1,
 		];
+
 		unsafe {
 			gl::GenVertexArrays(1, &mut vao);
 			gl::BindVertexArray(vao);
@@ -79,13 +81,17 @@ impl<'a> Terminal<'a> {
             gl::EnableVertexAttribArray(tex_attrib as GLuint);
             gl::VertexAttribPointer(tex_attrib as GLuint, 2, gl::FLOAT, gl::FALSE,
                                     4*4, (2*4) as *const _);
-
+            gl::Uniform1i(glutil::uni_loc(program,"font_tex"), 0 as i32);
+            gl::Uniform1i(glutil::uni_loc(program,"data_tex"), 1 as i32);
 		}
+		let data_texture = glutil::make_byte_tex(dimensions.0 as i32, 
+			dimensions.1 as i32, data.as_slice());
 		Terminal {
 			dim : dimensions,
 			data : data,
 			font : font,
 			vao : vao,
+			data_texture : data_texture,
 			cursor : (0,0),
 		}
 	}
@@ -164,11 +170,14 @@ impl<'a> Terminal<'a> {
 			gl::UseProgram(p);
 			gl::ActiveTexture(gl::TEXTURE0);
 			gl::BindTexture(gl::TEXTURE_2D,self.font.gl_texture);
+			gl::ActiveTexture(gl::TEXTURE1);
+			gl::BindTexture(gl::TEXTURE_2D,self.data_texture);
+			glutil::update_byte_tex(self.dim.0 as i32, 
+			self.dim.1 as i32, self.data.as_slice());
+
 			gl::BindVertexArray(self.vao);
-			// Set uniform for text?
-			let c_str = std::ffi::CString::new("data".as_bytes()).unwrap();
-			let loc = gl::GetUniformLocation(p,c_str.as_ptr());
-			gl::Uniform1uiv(loc,40*24,self.data.as_ptr() as *const _);
+
+			// Set uniforms
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
 		}
 	}
@@ -212,24 +221,7 @@ pub fn load_font<'a, T : BitFont<'a> >(font : T) -> LoadedFont {
 	let bounds = font.bounds();
 	let char_count = bounds.1 - bounds.0;
 	let texture_size = (cell_size.0 as i32 * char_count as i32, cell_size.1 as i32);
-	let mut texture : GLuint = 0;
-	unsafe {
-		// Create and bind texture object
-		gl::GenTextures(1, &mut texture);
-		gl::ActiveTexture(gl::TEXTURE0);
-		gl::BindTexture(gl::TEXTURE_2D,texture);
-		// Set texture data and eschew mipmaps
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_BASE_LEVEL, 0);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
-		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::R8UI as GLint,
-			texture_size.0, texture_size.1, 0,
-			gl::RED_INTEGER, gl::UNSIGNED_BYTE,
-			font.texture().as_ptr() as *const _);
-		// Unbind texture object
-		gl::BindTexture(gl::TEXTURE_2D,0);
-	}
+	let texture = glutil::make_byte_tex(texture_size.0,texture_size.1,font.texture());
 	LoadedFont {
 		cell_size : cell_size,
 		intercell : font.intercell_px(),
