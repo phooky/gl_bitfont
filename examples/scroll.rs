@@ -19,14 +19,14 @@ fn main() {
 	let text = include_str!("perec.txt");
 	let mut text_iter = text.chars();
 	while !window.should_close() {
-		for _ in 0..8 {
+		for _ in 0..3 {
 			match text_iter.next() {
 				Some(c) => t.write_char(c),
 				None => text_iter = text.chars(),
 			}
-			t.render();
-			window.swap_buffers();
 		}
+		t.render();
+		window.swap_buffers();
 
 		glfw.poll_events();
 		use glfw::Action;
