@@ -57,8 +57,8 @@ impl DisplayOptions {
 	pub fn new() -> DisplayOptions {
 		DisplayOptions {
 			fg_color : Color { r:0.0, g:1.0, b:0.0, a:1.0 },
-			bg_color : Color { r:0.0, g:0.0, b:0.0, a:1.0 },
-			scan_coverage : 0.8,
+			bg_color : Color { r:0.0, g:0.0, b:0.1, a:1.0 },
+			scan_coverage : 0.1,
 		}
 	}
 }
@@ -67,6 +67,7 @@ impl DisplayOptions {
 /// of the text
 pub struct Terminal<'a> {
 	pub dim : (u8,u8),  /// The dimensions, in characters, of this terminal
+	pub render_dim : (i32, i32),
 	pub data : Vec<u8>, /// The data to be displayed
 	font : &'a LoadedFont,
 	vao : GLuint, /// The vertex array object
@@ -143,6 +144,7 @@ impl<'a> Terminal<'a> {
 			char_dim.1 as i32, data.as_slice());
 		Terminal {
 			dim : char_dim,
+			render_dim : render_dim,
 			data : data,
 			font : font,
 			vao : vao,
@@ -214,9 +216,12 @@ impl<'a> Terminal<'a> {
 	pub fn write_char(&mut self, c : char) {
 		let x = self.cursor.0 as usize;
 		let y = self.cursor.1 as usize;
-		self.write_char_at(x, y, c);
+		let lf : bool = c == '\n';
+		if !lf {
+			self.write_char_at(x, y, c);
+		}
 		self.cursor.0 += 1;
-		if self.cursor.0 >= self.dim.0 { 
+		if (self.cursor.0 >= self.dim.0) || lf { 
 			self.cursor.0 = 0; self.cursor.1 += 1;
 			if self.cursor.1 >= self.dim.1 {
 				self.scroll(1); self.cursor.1 -= 1;
@@ -253,7 +258,7 @@ impl<'a> Terminal<'a> {
             gl::Uniform4f(glutil::uni_loc(p,"fg_color"), 
             	fg.r, fg.g, fg.b, fg.a);
             gl::Uniform4f(glutil::uni_loc(p,"bg_color"), 
-            	bg.r, bg.g, bg.b, bg.a);
+            	0.0,0.0,0.0,0.0);
             // Draw triangles
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
 			self.fb_beam.unbind();
@@ -266,8 +271,8 @@ impl<'a> Terminal<'a> {
 			gl::BindTexture(gl::TEXTURE_2D,self.fb_beam.texture_obj());
 			gl::BindVertexArray(self.vao2);
 			// Set uniforms
-            gl::Uniform1f(glutil::uni_loc(p,"decay_factor"), 0.1);
-            gl::Uniform4f(glutil::uni_loc(p,"bg_color"), 
+            gl::Uniform1f(glutil::uni_loc(p2,"decay_factor"), 0.2);
+            gl::Uniform4f(glutil::uni_loc(p2,"bg_color"), 
             	bg.r, bg.g, bg.b, bg.a);
             // Draw triangles
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
@@ -275,9 +280,10 @@ impl<'a> Terminal<'a> {
 			// Blit to window
 			gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER,0);
 			gl::BindFramebuffer(gl::READ_FRAMEBUFFER,self.fbs[ph2].fbo);
-			gl::BlitFramebuffer(0,0,20*8*4,12*10*4,
-				0,0,20*8*4,12*10*4,
+			gl::BlitFramebuffer(0,0,self.render_dim.0, self.render_dim.1,
+				0,0,self.render_dim.0, self.render_dim.1,
 				gl::COLOR_BUFFER_BIT,gl::LINEAR);
+			gl::BindFramebuffer(gl::READ_FRAMEBUFFER,self.fb_beam.fbo);
 		}
 	}
 }

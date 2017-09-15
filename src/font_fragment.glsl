@@ -26,8 +26,13 @@ void main() {
 	// beam pass; essentially whether we're displaying a pixel.
     float gun = texture(font_tex,tex_pos).r;
 
-	// The brightness is computed by comparing the beam coverage and the beam offset.
-	float brightness = 1.0 - 2.0*abs(beam_off); // temp
+    float brightness;
+	if (abs(beam_off) < scan_coverage/2.0) {
+		brightness = 1.0;
+	} else {
+		brightness = 0.2;
+	}
+	//float brightness = 1.0 - clamp(2.0*abs(beam_off) - scan_coverage,0.0,1.0); // temp
 	if (gun <= 0.0) { brightness = brightness * 0.2; }
 	brightness = pow(brightness, 2.5);
 
