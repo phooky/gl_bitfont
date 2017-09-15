@@ -42,6 +42,22 @@ pub struct Color {
 	a : f32,
 }
 
+pub struct DisplayOptions {
+	pub fg_color : Color,
+	pub bg_color : Color,
+	pub scan_coverage : f32,
+}
+
+impl DisplayOptions {
+	pub fn new() -> DisplayOptions {
+		DisplayOptions {
+			fg_color : Color { r:0.0, g:1.0, b:0.0, a:1.0 },
+			bg_color : Color { r:0.0, g:0.2, b:0.0, a:1.0 },
+			scan_coverage : 0.8,
+		}
+	}
+}
+
 /// An area to render text into, along with the current contents
 /// of the text
 pub struct Terminal<'a> {
@@ -51,7 +67,7 @@ pub struct Terminal<'a> {
 	vao : GLuint,
 	data_texture : GLuint,
 	pub cursor : (u8, u8),
-	pub color : Color,
+	pub options : DisplayOptions,
 }
 
 impl<'a> Terminal<'a> {
@@ -101,7 +117,7 @@ impl<'a> Terminal<'a> {
 			vao : vao,
 			data_texture : data_texture,
 			cursor : (0,0),
-			color : Color { r:0.0, g:1.0, b:0.0, a:1.0 },
+			options : DisplayOptions::new(),
 		}
 	}
 
@@ -183,14 +199,15 @@ impl<'a> Terminal<'a> {
 			gl::BindTexture(gl::TEXTURE_2D,self.data_texture);
 			glutil::update_byte_tex(self.dim.0 as i32, 
 			self.dim.1 as i32, self.data.as_slice());
-
 			gl::BindVertexArray(self.vao);
-            gl::Uniform1f(glutil::uni_loc(p,"font_char_count"), self.font.bounds.1 as f32);
-            gl::Uniform4f(glutil::uni_loc(p,"in_color"), 
-            	self.color.r, self.color.g, self.color.b,
-            	self.color.a);
-
 			// Set uniforms
+            gl::Uniform1f(glutil::uni_loc(p,"scan_coverage"), self.options.scan_coverage);
+            gl::Uniform1f(glutil::uni_loc(p,"scan_height"), 1.0 / self.font.cell_size.1 as f32);
+            gl::Uniform1f(glutil::uni_loc(p,"font_char_count"), self.font.bounds.1 as f32);
+            let ref fg = self.options.fg_color;
+            gl::Uniform4f(glutil::uni_loc(p,"in_color"), 
+            	fg.r, fg.g, fg.b, fg.a);
+            // Draw triangles
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
 		}
 	}
