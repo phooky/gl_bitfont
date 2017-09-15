@@ -1,15 +1,20 @@
 //! gl_bitfont renders simple, old-school pixel fonts 
 extern crate gl;
 
-mod glutil;
+pub mod glutil;
+
+use glutil::Framebuffer;
 
 use gl::types::*;
 
 // Shader sources
-static VS_SRC: &'static str = include_str!("font_vertex.glsl");
-static FS_SRC: &'static str = include_str!("font_fragment.glsl");
+static FONT_VS_SRC: &'static str = include_str!("font_vertex.glsl");
+static FONT_FS_SRC: &'static str = include_str!("font_fragment.glsl");
+static CRT_VS_SRC: &'static str = include_str!("crt_vertex.glsl");
+static CRT_FS_SRC: &'static str = include_str!("crt_fragment.glsl");
 
 static mut font_program : Option<GLuint> = None;
+static mut crt_program : Option<GLuint> = None;
 
 /// The BitFont trait includes all the information necessary to
 /// load a bit font into the GL engine. All fonts are presumed
@@ -52,7 +57,7 @@ impl DisplayOptions {
 	pub fn new() -> DisplayOptions {
 		DisplayOptions {
 			fg_color : Color { r:0.0, g:1.0, b:0.0, a:1.0 },
-			bg_color : Color { r:0.0, g:0.05, b:0.0, a:1.0 },
+			bg_color : Color { r:0.0, g:0.0, b:0.0, a:1.0 },
 			scan_coverage : 0.8,
 		}
 	}
@@ -64,26 +69,38 @@ pub struct Terminal<'a> {
 	pub dim : (u8,u8),  /// The dimensions, in characters, of this terminal
 	pub data : Vec<u8>, /// The data to be displayed
 	font : &'a LoadedFont,
-	vao : GLuint,
+	vao : GLuint, /// The vertex array object
+	vao2 : GLuint,
 	data_texture : GLuint,
 	pub cursor : (u8, u8),
 	pub options : DisplayOptions,
+	fbs : [Framebuffer;2],
+	fb_beam : Framebuffer,
+	phase : usize,	
 }
 
 impl<'a> Terminal<'a> {
-	pub fn new(dimensions : (u8,u8), font : &'a LoadedFont) -> Terminal {
+	pub fn new(char_dim : (u8,u8), render_dim : (i32, i32), font : &'a LoadedFont) -> Terminal {
 		let mut vao : GLuint = 0;
+		let mut vao2 : GLuint = 0;
 		let mut vbo : GLuint = 0;
 		let mut data : Vec<u8> = Vec::new();
-		let d = (dimensions.0 as f32, dimensions.1 as f32);
-		data.resize(dimensions.0 as usize * dimensions.1 as usize, 32);
+		let d = (char_dim.0 as f32, char_dim.1 as f32);
+		data.resize(char_dim.0 as usize * char_dim.1 as usize, 32);
 		let vertices : [GLfloat; 4 * 4] = [
 			1.0 , 1.0,   d.0, 0.0,
 			-1.0, 1.0,   0.0, 0.0, 
 			1.0 ,-1.0,   d.0, d.1,
 			-1.0,-1.0,   0.0, d.1,
 		];
-
+		let vertices2 : [GLfloat; 4 * 4] = [
+			1.0 , 1.0,   1.0, 1.0,
+			-1.0, 1.0,   0.0, 1.0, 
+			1.0 ,-1.0,   1.0, 0.0,
+			-1.0,-1.0,   0.0, 0.0,
+		];
+		let fbs = [Framebuffer::new(render_dim).unwrap(), Framebuffer::new(render_dim).unwrap()];
+		let fb_beam = Framebuffer::new(render_dim).unwrap();
 		unsafe {
 			gl::GenVertexArrays(1, &mut vao);
 			gl::BindVertexArray(vao);
@@ -92,11 +109,8 @@ impl<'a> Terminal<'a> {
 			gl::BufferData(gl::ARRAY_BUFFER, 4*4*4, 
 				vertices.as_ptr() as *const _, gl::STATIC_DRAW);
 
-
 			let program = font_program.unwrap();
 			gl::UseProgram(program);
-            gl::BindFragDataLocation(program, 0,
-                                     std::ffi::CString::new("color").unwrap().as_ptr());
 			let pos_attrib = glutil::attrib_loc(program,"position");
             gl::EnableVertexAttribArray(pos_attrib as GLuint);
             gl::VertexAttribPointer(pos_attrib as GLuint, 2, gl::FLOAT, gl::FALSE,
@@ -105,19 +119,40 @@ impl<'a> Terminal<'a> {
             gl::EnableVertexAttribArray(tex_attrib as GLuint);
             gl::VertexAttribPointer(tex_attrib as GLuint, 2, gl::FLOAT, gl::FALSE,
                                     4*4, (2*4) as *const _);
-            gl::Uniform1i(glutil::uni_loc(program,"font_tex"), 0 as i32);
-            gl::Uniform1i(glutil::uni_loc(program,"data_tex"), 1 as i32);
+
+			gl::GenVertexArrays(1, &mut vao2);
+			gl::BindVertexArray(vao2);
+			gl::GenBuffers(1, &mut vbo);
+			gl::BindBuffer(gl::ARRAY_BUFFER,vbo);
+			gl::BufferData(gl::ARRAY_BUFFER, 4*4*4, 
+				vertices2.as_ptr() as *const _, gl::STATIC_DRAW);
+
+			let program2 = crt_program.unwrap();
+			gl::UseProgram(program2);
+			let pos_attrib2 = glutil::attrib_loc(program,"position");
+            gl::EnableVertexAttribArray(pos_attrib2 as GLuint);
+            gl::VertexAttribPointer(pos_attrib2 as GLuint, 2, gl::FLOAT, gl::FALSE,
+                                    4*4, std::ptr::null());
+            let tex_attrib2 = glutil::attrib_loc(program,"tex_coords");
+            gl::EnableVertexAttribArray(tex_attrib2 as GLuint);
+            gl::VertexAttribPointer(tex_attrib2 as GLuint, 2, gl::FLOAT, gl::FALSE,
+                                    4*4, (2*4) as *const _);
+
 		}
-		let data_texture = glutil::make_byte_tex(dimensions.0 as i32, 
-			dimensions.1 as i32, data.as_slice());
+		let data_texture = glutil::make_byte_tex(char_dim.0 as i32, 
+			char_dim.1 as i32, data.as_slice());
 		Terminal {
-			dim : dimensions,
+			dim : char_dim,
 			data : data,
 			font : font,
 			vao : vao,
+			vao2 : vao2,
 			data_texture : data_texture,
 			cursor : (0,0),
 			options : DisplayOptions::new(),
+			fbs : fbs,
+			fb_beam : fb_beam,
+			phase : 0,
 		}
 	}
 
@@ -189,8 +224,17 @@ impl<'a> Terminal<'a> {
 		}
 	}
 
+	pub fn flip_phase(&mut self) {
+		let new_phase = if self.phase == 0 { 1 } else { 0 };
+		self.phase = new_phase;
+	}
+
 	pub fn render(&self) {
+		let ph1 = self.phase;
+		let ph2 = if self.phase == 0 { 1 } else { 0 };
+
 		unsafe {
+			self.fb_beam.bind();
 			let p = font_program.unwrap();
 			gl::UseProgram(p);
 			gl::ActiveTexture(gl::TEXTURE0);
@@ -212,6 +256,28 @@ impl<'a> Terminal<'a> {
             	bg.r, bg.g, bg.b, bg.a);
             // Draw triangles
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
+			self.fb_beam.unbind();
+			self.fbs[ph2].bind();
+			let p2 = crt_program.unwrap();
+			gl::UseProgram(p2);
+			gl::ActiveTexture(gl::TEXTURE0);
+			gl::BindTexture(gl::TEXTURE_2D,self.fbs[ph1].texture_obj());
+			gl::ActiveTexture(gl::TEXTURE1);
+			gl::BindTexture(gl::TEXTURE_2D,self.fb_beam.texture_obj());
+			gl::BindVertexArray(self.vao2);
+			// Set uniforms
+            gl::Uniform1f(glutil::uni_loc(p,"decay_factor"), 0.1);
+            gl::Uniform4f(glutil::uni_loc(p,"bg_color"), 
+            	bg.r, bg.g, bg.b, bg.a);
+            // Draw triangles
+			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
+			self.fbs[ph2].unbind();
+			// Blit to window
+			gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER,0);
+			gl::BindFramebuffer(gl::READ_FRAMEBUFFER,self.fbs[ph2].fbo);
+			gl::BlitFramebuffer(0,0,20*8*4,12*10*4,
+				0,0,20*8*4,12*10*4,
+				gl::COLOR_BUFFER_BIT,gl::LINEAR);
 		}
 	}
 }
@@ -246,8 +312,24 @@ pub fn osborne_font() -> LoadedFont {
 pub fn load_font<'a, T : BitFont<'a> >(font : T) -> LoadedFont {
 	unsafe {
 		if font_program == None {
-			font_program = Some(glutil::build_program(VS_SRC, FS_SRC)
+			font_program = Some(glutil::build_program(FONT_VS_SRC, FONT_FS_SRC)
 				.expect("Failed to create font shader program"));
+			let program = font_program.unwrap();
+			gl::UseProgram(program);
+            gl::Uniform1i(glutil::uni_loc(program,"font_tex"), 0 as i32);
+            gl::Uniform1i(glutil::uni_loc(program,"data_tex"), 1 as i32);
+            gl::BindFragDataLocation(program, 0,
+                                     std::ffi::CString::new("color").unwrap().as_ptr());
+		}
+		if crt_program == None {
+			crt_program = Some(glutil::build_program(CRT_VS_SRC, CRT_FS_SRC)
+				.expect("Failed to create crt shader program"));
+			let program = crt_program.unwrap();
+			gl::UseProgram(program);
+            gl::Uniform1i(glutil::uni_loc(program,"last_frame_tex"), 0 as i32);
+            gl::Uniform1i(glutil::uni_loc(program,"new_beam_tex"), 1 as i32);
+            gl::BindFragDataLocation(program, 0,
+                                     std::ffi::CString::new("color").unwrap().as_ptr());
 		}
 	}
 	let cell_size = font.cell_size_px();

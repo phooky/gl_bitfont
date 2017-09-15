@@ -14,7 +14,7 @@ fn main() {
     gl::load_with(|s| window.get_proc_address(s) as *const _);
 	window.make_current();
 	let f = gl_bitfont::osborne_font();
-	let mut t = gl_bitfont::Terminal::new((80,24),&f);
+	let mut t = gl_bitfont::Terminal::new((80,24),(80*8,24*10),&f);
 	window.set_key_polling(true);
 	window.set_char_polling(true);
 	let mut cursor : (usize,usize) = (0,0);

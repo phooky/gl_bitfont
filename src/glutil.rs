@@ -4,6 +4,51 @@ use gl::types::*;
 use std;
 use std::str;
 
+#[derive(Debug)]
+
+
+/// A Framebuffer object and attached texture
+pub struct Framebuffer {
+    pub fbo : GLuint,
+    pub txo : GLuint,
+}
+
+impl Framebuffer {
+    pub fn new(size : (i32, i32)) -> Result<Framebuffer,String> {
+        let mut fbo : GLuint = 0;
+        let mut txo : GLuint = 0;
+        unsafe {
+            // Create and bind texture object
+            gl::GenTextures(1, &mut txo);
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, txo);
+            // Create texture in memory
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+            gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA8 as i32, size.0, size.1, 0, 
+                gl::RGBA, gl::UNSIGNED_BYTE, 0 as *const _);
+            // Create fbo and bind texture
+            gl::GenFramebuffers(1,&mut fbo);
+            gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+            gl::FramebufferTexture2D(gl::FRAMEBUFFER,gl::COLOR_ATTACHMENT0,
+                gl::TEXTURE_2D, txo, 0);
+            let fbstat = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
+            if fbstat != gl::FRAMEBUFFER_COMPLETE {
+                return Err(String::from("Incomplete framebuffer!"));
+            }
+            gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+        }
+        Ok(Framebuffer {
+            fbo : fbo,
+            txo : txo,
+        })
+    }
+
+    pub fn bind(&self) { unsafe { gl::BindFramebuffer(gl::FRAMEBUFFER, self.fbo); } }
+    pub fn unbind(&self) { unsafe { gl::BindFramebuffer(gl::FRAMEBUFFER, 0); } }
+    pub fn texture_obj(&self) -> GLuint { self.txo }
+}
+
 pub fn attrib_loc(program : GLuint , name : &str) -> GLint {
     let c_str = std::ffi::CString::new(name.as_bytes()).unwrap();
     let loc = unsafe { gl::GetAttribLocation(program, c_str.as_ptr()) };
