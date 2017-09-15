@@ -52,7 +52,7 @@ impl DisplayOptions {
 	pub fn new() -> DisplayOptions {
 		DisplayOptions {
 			fg_color : Color { r:0.0, g:1.0, b:0.0, a:1.0 },
-			bg_color : Color { r:0.0, g:0.2, b:0.0, a:1.0 },
+			bg_color : Color { r:0.0, g:0.05, b:0.0, a:1.0 },
 			scan_coverage : 0.8,
 		}
 	}
@@ -205,8 +205,11 @@ impl<'a> Terminal<'a> {
             gl::Uniform1f(glutil::uni_loc(p,"scan_height"), 1.0 / self.font.cell_size.1 as f32);
             gl::Uniform1f(glutil::uni_loc(p,"font_char_count"), self.font.bounds.1 as f32);
             let ref fg = self.options.fg_color;
-            gl::Uniform4f(glutil::uni_loc(p,"in_color"), 
+            let ref bg = self.options.bg_color;
+            gl::Uniform4f(glutil::uni_loc(p,"fg_color"), 
             	fg.r, fg.g, fg.b, fg.a);
+            gl::Uniform4f(glutil::uni_loc(p,"bg_color"), 
+            	bg.r, bg.g, bg.b, bg.a);
             // Draw triangles
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
 		}
