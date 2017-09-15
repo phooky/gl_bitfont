@@ -35,6 +35,13 @@ pub struct LoadedFont {
 	gl_texture : GLuint,
 }
 
+pub struct Color {
+	r : f32,
+	g : f32, 
+	b : f32,
+	a : f32,
+}
+
 /// An area to render text into, along with the current contents
 /// of the text
 pub struct Terminal<'a> {
@@ -44,6 +51,7 @@ pub struct Terminal<'a> {
 	vao : GLuint,
 	data_texture : GLuint,
 	pub cursor : (u8, u8),
+	pub color : Color,
 }
 
 impl<'a> Terminal<'a> {
@@ -93,6 +101,7 @@ impl<'a> Terminal<'a> {
 			vao : vao,
 			data_texture : data_texture,
 			cursor : (0,0),
+			color : Color { r:0.0, g:1.0, b:0.0, a:1.0 },
 		}
 	}
 
@@ -176,6 +185,10 @@ impl<'a> Terminal<'a> {
 			self.dim.1 as i32, self.data.as_slice());
 
 			gl::BindVertexArray(self.vao);
+            gl::Uniform1f(glutil::uni_loc(p,"font_char_count"), self.font.bounds.1 as f32);
+            gl::Uniform4f(glutil::uni_loc(p,"in_color"), 
+            	self.color.r, self.color.g, self.color.b,
+            	self.color.a);
 
 			// Set uniforms
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
