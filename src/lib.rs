@@ -25,7 +25,7 @@ pub trait BitFont<'a> {
 	/// Spacing between cells, vertically and horizontall, in pixels
 	fn intercell_px(&self) -> (u8,u8);
 	/// Index of lowest and highest ASCII values present in font.
-	fn bounds(&self) -> (u8, u8);
+	fn bounds(&self) -> (i16, i16);
 	/// Raw bit texture data. This represented as a byte map, with a 
 	/// width of (max-min)*cell width and a height equal to the cell 
 	/// height.
@@ -36,7 +36,7 @@ pub trait BitFont<'a> {
 pub struct LoadedFont {
 	cell_size : (u8,u8),
 	intercell : (u8,u8),
-	bounds : (u8,u8),
+	bounds : (i16,i16),
 	gl_texture : GLuint,
 }
 
@@ -291,14 +291,14 @@ impl<'a> Terminal<'a> {
 struct EmbeddedFont {
 	cell_size : (u8, u8),
 	intercell : (u8, u8),
-	bounds : (u8, u8),
+	bounds : (i16, i16),
 	texture : &'static [u8],
 }
 
 impl<'a> BitFont<'a> for EmbeddedFont {
 	fn cell_size_px(&self) -> (u8, u8) { self.cell_size }
 	fn intercell_px(&self) -> (u8, u8) { self.intercell }
-	fn bounds(&self) -> (u8,u8) { self.bounds }
+	fn bounds(&self) -> (i16, i16) { self.bounds }
 	fn texture(&self) -> &'a [u8] { self.texture }
 }
 
@@ -311,8 +311,34 @@ fn get_osborne_font() -> EmbeddedFont {
 	}
 }
 
+fn get_waters_w600e_font() -> EmbeddedFont {
+	EmbeddedFont {
+		cell_size : (8,16),
+		intercell : (0,0),
+		bounds : (32,137),
+		texture : include_bytes!("fonts/W600E.charrom"),
+	}	
+}
+
+fn get_kaypro_2_font() -> EmbeddedFont {
+	EmbeddedFont {
+		cell_size : (8,16),
+		intercell : (0,0),
+		bounds : (0,256),
+		texture : include_bytes!("fonts/Kaypro2.charrom"),
+	}	
+}
+
 pub fn osborne_font() -> LoadedFont {
 	load_font(get_osborne_font())
+}
+
+pub fn kaypro_2_font() -> LoadedFont {
+	load_font(get_kaypro_2_font())
+}
+
+pub fn waters_w600e_font() -> LoadedFont {
+	load_font(get_waters_w600e_font())
 }
 
 pub fn load_font<'a, T : BitFont<'a> >(font : T) -> LoadedFont {
