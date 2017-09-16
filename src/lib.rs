@@ -239,8 +239,34 @@ fn get_osborne_font() -> EmbeddedFont {
 	}
 }
 
+fn get_waters_w600e_font() -> EmbeddedFont {
+	EmbeddedFont {
+		cell_size : (8,16),
+		intercell : (0,0),
+		bounds : (32,137),
+		texture : include_bytes!("fonts/W600E.charrom"),
+	}	
+}
+
+fn get_kaypro_2_font() -> EmbeddedFont {
+	EmbeddedFont {
+		cell_size : (8,16),
+		intercell : (0,0),
+		bounds : (0,256),
+		texture : include_bytes!("fonts/Kaypro2.charrom"),
+	}	
+}
+
 pub fn osborne_font() -> LoadedFont {
 	load_font(get_osborne_font())
+}
+
+pub fn kaypro_2_font() -> LoadedFont {
+	load_font(get_kaypro_2_font())
+}
+
+pub fn waters_w600e_font() -> LoadedFont {
+	load_font(get_waters_w600e_font())
 }
 
 pub fn load_font<'a, T : BitFont<'a> >(font : T) -> LoadedFont {

@@ -8,7 +8,7 @@ use std::time;
 fn main() {
 	let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS)
 		.expect("Failed to initialize GLFW.");
-	let (mut window, events) = glfw.create_window(20*8*8, 12*10*8, "gl_bitfont example",
+	let (mut window, events) = glfw.create_window(20*8*8, 12*16*8, "gl_bitfont example",
 		glfw::WindowMode::Windowed)
 		.expect("Failed to create GLFW window.");
     gl::load_with(|s| window.get_proc_address(s) as *const _);
