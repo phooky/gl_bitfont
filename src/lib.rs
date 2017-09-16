@@ -252,7 +252,8 @@ impl<'a> Terminal<'a> {
 			// Set uniforms
             gl::Uniform1f(glutil::uni_loc(p,"scan_coverage"), self.options.scan_coverage);
             gl::Uniform1f(glutil::uni_loc(p,"scan_height"), 1.0 / self.font.cell_size.1 as f32);
-            gl::Uniform1f(glutil::uni_loc(p,"font_char_count"), self.font.bounds.1 as f32);
+            gl::Uniform1f(glutil::uni_loc(p,"font_char_count"), (self.font.bounds.1 - self.font.bounds.0) as f32);
+            gl::Uniform1f(glutil::uni_loc(p,"font_first_char"), self.font.bounds.0 as f32);
             let ref fg = self.options.fg_color;
             let ref bg = self.options.bg_color;
             gl::Uniform4f(glutil::uni_loc(p,"fg_color"), 
@@ -271,7 +272,7 @@ impl<'a> Terminal<'a> {
 			gl::BindTexture(gl::TEXTURE_2D,self.fb_beam.texture_obj());
 			gl::BindVertexArray(self.vao2);
 			// Set uniforms
-            gl::Uniform1f(glutil::uni_loc(p2,"decay_factor"), 0.2);
+            gl::Uniform1f(glutil::uni_loc(p2,"decay_factor"), 0.15);
             gl::Uniform4f(glutil::uni_loc(p2,"bg_color"), 
             	bg.r, bg.g, bg.b, bg.a);
             // Draw triangles

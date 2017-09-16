@@ -3,6 +3,7 @@ in vec2 v_tex_coords;
 out vec4 color;
 
 uniform float font_char_count;
+uniform float font_first_char;
 uniform float scan_height;
 uniform float scan_coverage;
 uniform vec4 fg_color;
@@ -14,6 +15,7 @@ void main() {
 
 	vec2 term_pos = vec2(floor(v_tex_coords.x),floor(v_tex_coords.y));
 	float c_idx = texelFetch(data_tex,ivec2(int(term_pos.x),int(term_pos.y)),0).r;
+	c_idx = c_idx - font_first_char;
 	vec2 char_off = v_tex_coords - term_pos;
     vec2 tex_pos = vec2((c_idx+char_off.x)/font_char_count, char_off.y);
 
