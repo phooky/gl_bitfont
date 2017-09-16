@@ -7,7 +7,7 @@ use std::time;
 use gl_bitfont::glutil::Framebuffer;
 
 const ww : i32 = 20*8*8;
-const wh : i32 = 12*16*8;
+const wh : i32 = 12*10*8;
 
 fn main() {
 	let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS)
@@ -17,8 +17,8 @@ fn main() {
 		.expect("Failed to create GLFW window.");
     gl::load_with(|s| window.get_proc_address(s) as *const _);
 	window.make_current();
-	let f = gl_bitfont::waters_w600e_font();
-	let mut t = gl_bitfont::Terminal::new((40,24),(ww, wh),&f);
+	let f = gl_bitfont::osborne_font();
+	let mut t = gl_bitfont::Terminal::new((20,12),(ww, wh),&f);
 	t.options.scan_coverage = 0.3;
 	window.set_key_polling(true);
 	let text = include_str!("jabberwocky.txt");
