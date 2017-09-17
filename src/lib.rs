@@ -58,7 +58,7 @@ impl DisplayOptions {
 		DisplayOptions {
 			fg_color : Color { r:0.0, g:1.0, b:0.0, a:1.0 },
 			bg_color : Color { r:0.0, g:0.0, b:0.1, a:1.0 },
-			scan_coverage : 0.1,
+			scan_coverage : 0.5,
 		}
 	}
 }
