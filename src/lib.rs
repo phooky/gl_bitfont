@@ -63,112 +63,132 @@ impl DisplayOptions {
 	}
 }
 
+/// The TerminalGLState contains all the information necessary to render a terminal
+/// display.
+pub struct TerminalGLState {
+	beam_vao : GLuint, //< The vertex array object used to render characters
+	crt_vao : GLuint, //< The vertex array object used to blit a rectangle
+	data_texture : GLuint, //< The texture representing the characters to be displayed
+	crt_fb : [Framebuffer;2], //< Two framebuffers to ping-pong the phosphor state of the CRT
+	beam_fb : [Framebuffer;2], //< Two framebuffers to ping-pong the bloomed beam trace
+	crt_phase : usize, //< The index of the CRT framebuffer that is currently displayed.
+}
+
 /// An area to render text into, along with the current contents
 /// of the text
 pub struct Terminal<'a> {
-	pub dim : (u8,u8),  /// The dimensions, in characters, of this terminal
+	pub term_dim : (i32, i32),  /// The dimensions, in characters, of this terminal
 	pub render_dim : (i32, i32),
 	pub data : Vec<u8>, /// The data to be displayed
 	font : &'a LoadedFont,
-	vao : GLuint, /// The vertex array object
-	vao2 : GLuint,
-	data_texture : GLuint,
-	pub cursor : (u8, u8),
+	pub cursor : (i32, i32),
 	pub options : DisplayOptions,
-	fbs : [Framebuffer;2],
-	fb_beam : Framebuffer,
-	phase : usize,	
+	gl : TerminalGLState,
 }
 
 impl<'a> Terminal<'a> {
-	pub fn new(char_dim : (u8,u8), render_dim : (i32, i32), font : &'a LoadedFont) -> Terminal {
-		let mut vao : GLuint = 0;
-		let mut vao2 : GLuint = 0;
-		let mut vbo : GLuint = 0;
+	/// Creating a new terminal presumes that you have already set up a valid GL context
+	pub fn new(term_dim : (i32, i32), render_dim : (i32, i32), font : &'a LoadedFont) -> Terminal {
+		let mut gl = TerminalGLState {
+			beam_vao : 0,
+			crt_vao : 0,
+			data_texture : 0,
+			crt_fb : [
+				Framebuffer::new(render_dim).unwrap(), 
+				Framebuffer::new(render_dim).unwrap()
+			],
+			beam_fb : [
+				Framebuffer::new(render_dim).unwrap(), 
+				Framebuffer::new(render_dim).unwrap()
+			],
+			crt_phase : 0,
+		};
+
 		let mut data : Vec<u8> = Vec::new();
-		let d = (char_dim.0 as f32, char_dim.1 as f32);
-		data.resize(char_dim.0 as usize * char_dim.1 as usize, 32);
-		let vertices : [GLfloat; 4 * 4] = [
+		let d = (term_dim.0 as f32, term_dim.1 as f32);
+		data.resize(term_dim.0 as usize * term_dim.1 as usize, 32);
+
+		// Set up VAO/VBO for beam
+		let beam_vertices : [GLfloat; 4 * 4] = [
 			1.0 , 1.0,   d.0, 0.0,
 			-1.0, 1.0,   0.0, 0.0, 
 			1.0 ,-1.0,   d.0, d.1,
 			-1.0,-1.0,   0.0, d.1,
 		];
-		let vertices2 : [GLfloat; 4 * 4] = [
+		let mut beam_vbo : GLuint = 0;
+		unsafe {
+			let beam_prog = font_program.unwrap();
+			gl::GenVertexArrays(1, &mut gl.beam_vao);
+			gl::BindVertexArray(gl.beam_vao);
+			gl::GenBuffers(1, &mut beam_vbo);
+			gl::BindBuffer(gl::ARRAY_BUFFER,beam_vbo);
+			gl::BufferData(gl::ARRAY_BUFFER, 4*4*4, 
+				beam_vertices.as_ptr() as *const _, gl::STATIC_DRAW);
+			gl::UseProgram(beam_prog);
+			let pos_attrib = glutil::attrib_loc(beam_prog,"position");
+            gl::EnableVertexAttribArray(pos_attrib as GLuint);
+            gl::VertexAttribPointer(pos_attrib as GLuint, 2, gl::FLOAT, gl::FALSE,
+                                    4*4, std::ptr::null());
+            let tex_attrib = glutil::attrib_loc(beam_prog,"tex_coords");
+            gl::EnableVertexAttribArray(tex_attrib as GLuint);
+            gl::VertexAttribPointer(tex_attrib as GLuint, 2, gl::FLOAT, gl::FALSE,
+                                    4*4, (2*4) as *const _);
+        }
+
+        // Set up VAO/VBO for crt
+		let crt_vertices : [GLfloat; 4 * 4] = [
 			1.0 , 1.0,   1.0, 1.0,
 			-1.0, 1.0,   0.0, 1.0, 
 			1.0 ,-1.0,   1.0, 0.0,
 			-1.0,-1.0,   0.0, 0.0,
 		];
-		let fbs = [Framebuffer::new(render_dim).unwrap(), Framebuffer::new(render_dim).unwrap()];
-		let fb_beam = Framebuffer::new(render_dim).unwrap();
+		let mut crt_vbo : GLuint = 0;
 		unsafe {
-			gl::GenVertexArrays(1, &mut vao);
-			gl::BindVertexArray(vao);
-			gl::GenBuffers(1, &mut vbo);
-			gl::BindBuffer(gl::ARRAY_BUFFER,vbo);
+			let crt_prog = crt_program.unwrap();
+			gl::GenVertexArrays(1, &mut gl.crt_vao);
+			gl::BindVertexArray(gl.crt_vao);
+			gl::GenBuffers(1, &mut crt_vbo);
+			gl::BindBuffer(gl::ARRAY_BUFFER,crt_vbo);
 			gl::BufferData(gl::ARRAY_BUFFER, 4*4*4, 
-				vertices.as_ptr() as *const _, gl::STATIC_DRAW);
-
-			let program = font_program.unwrap();
-			gl::UseProgram(program);
-			let pos_attrib = glutil::attrib_loc(program,"position");
+				crt_vertices.as_ptr() as *const _, gl::STATIC_DRAW);
+			let crt_prog = crt_program.unwrap();
+			gl::UseProgram(crt_prog);
+			let pos_attrib = glutil::attrib_loc(crt_prog,"position");
             gl::EnableVertexAttribArray(pos_attrib as GLuint);
             gl::VertexAttribPointer(pos_attrib as GLuint, 2, gl::FLOAT, gl::FALSE,
                                     4*4, std::ptr::null());
-            let tex_attrib = glutil::attrib_loc(program,"tex_coords");
+            let tex_attrib = glutil::attrib_loc(crt_prog,"tex_coords");
             gl::EnableVertexAttribArray(tex_attrib as GLuint);
             gl::VertexAttribPointer(tex_attrib as GLuint, 2, gl::FLOAT, gl::FALSE,
                                     4*4, (2*4) as *const _);
-
-			gl::GenVertexArrays(1, &mut vao2);
-			gl::BindVertexArray(vao2);
-			gl::GenBuffers(1, &mut vbo);
-			gl::BindBuffer(gl::ARRAY_BUFFER,vbo);
-			gl::BufferData(gl::ARRAY_BUFFER, 4*4*4, 
-				vertices2.as_ptr() as *const _, gl::STATIC_DRAW);
-
-			let program2 = crt_program.unwrap();
-			gl::UseProgram(program2);
-			let pos_attrib2 = glutil::attrib_loc(program,"position");
-            gl::EnableVertexAttribArray(pos_attrib2 as GLuint);
-            gl::VertexAttribPointer(pos_attrib2 as GLuint, 2, gl::FLOAT, gl::FALSE,
-                                    4*4, std::ptr::null());
-            let tex_attrib2 = glutil::attrib_loc(program,"tex_coords");
-            gl::EnableVertexAttribArray(tex_attrib2 as GLuint);
-            gl::VertexAttribPointer(tex_attrib2 as GLuint, 2, gl::FLOAT, gl::FALSE,
-                                    4*4, (2*4) as *const _);
-
 		}
-		let data_texture = glutil::make_byte_tex(char_dim.0 as i32, 
-			char_dim.1 as i32, data.as_slice());
+
+		// Set up data texture
+		gl.data_texture = glutil::make_byte_tex(term_dim.0 as i32, 
+			term_dim.1 as i32, data.as_slice());
+
 		Terminal {
-			dim : char_dim,
+			term_dim : term_dim,
 			render_dim : render_dim,
 			data : data,
 			font : font,
-			vao : vao,
-			vao2 : vao2,
-			data_texture : data_texture,
 			cursor : (0,0),
 			options : DisplayOptions::new(),
-			fbs : fbs,
-			fb_beam : fb_beam,
-			phase : 0,
+			gl : gl,
 		}
 	}
 
 	pub fn copy_line(&mut self, from : i8, to : i8) {
-		let to_idx = self.dim.0 as usize * to as usize;
-		let from_idx = self.dim.0 as usize * from as usize;
-		for n in 0..self.dim.0 as usize{
+		let to_idx = self.term_dim.0 as usize * to as usize;
+		let from_idx = self.term_dim.0 as usize * from as usize;
+		for n in 0..self.term_dim.0 as usize{
 			self.data[to_idx + n] = self.data[from_idx + n];
 		}
 	}
 
 	pub fn blank_line(&mut self, line_no : i8) {
-		let idx = self.dim.0 as usize * line_no as usize;
-		for n in 0..self.dim.0 as usize{
+		let idx = self.term_dim.0 as usize * line_no as usize;
+		for n in 0..self.term_dim.0 as usize{
 			self.data[idx + n] = 32;
 		}
 	}
@@ -176,11 +196,11 @@ impl<'a> Terminal<'a> {
 	pub fn scroll(&mut self, lines : i8) {
 		match lines {
 			0 => {},
-			x if x > self.dim.1 as i8 => {},
-			x if x < -(self.dim.1 as i8) => {},
+			x if x > self.term_dim.1 as i8 => {},
+			x if x < -(self.term_dim.1 as i8) => {},
 			x if x > 0 => {
-				for n in 0..(self.dim.1 as i8) {
-					if n < self.dim.1 as i8-x {
+				for n in 0..(self.term_dim.1 as i8) {
+					if n < self.term_dim.1 as i8-x {
 						self.copy_line(n+x,n);
 					} else {
 						self.blank_line(n);
@@ -188,7 +208,7 @@ impl<'a> Terminal<'a> {
 				}
 			},
 			x if x < 0 => {
-				for n in (0..(self.dim.1 as i8)).rev() {
+				for n in (0..(self.term_dim.1 as i8)).rev() {
 					if n >= -x { 
 						self.copy_line(n+x,n);
 					} else {
@@ -201,7 +221,7 @@ impl<'a> Terminal<'a> {
 	}
 
 	pub fn write_str_at(&mut self, x : usize, y : usize, text : &str) {
-		let mut idx = x + y*self.dim.0 as usize;
+		let mut idx = x + y*self.term_dim.0 as usize;
 		for c in text.bytes() {
 			self.data[idx] = c as u8;
 			idx = idx + 1;
@@ -209,7 +229,7 @@ impl<'a> Terminal<'a> {
 	}
 
 	pub fn write_char_at(&mut self, x : usize, y : usize, c : char) {
-		let mut idx = x + y*self.dim.0 as usize;
+		let mut idx = x + y*self.term_dim.0 as usize;
 		self.data[idx] = c as u8;
 	}
 
@@ -221,70 +241,69 @@ impl<'a> Terminal<'a> {
 			self.write_char_at(x, y, c);
 		}
 		self.cursor.0 += 1;
-		if (self.cursor.0 >= self.dim.0) || lf { 
+		if (self.cursor.0 >= self.term_dim.0) || lf { 
 			self.cursor.0 = 0; self.cursor.1 += 1;
-			if self.cursor.1 >= self.dim.1 {
+			if self.cursor.1 >= self.term_dim.1 {
 				self.scroll(1); self.cursor.1 -= 1;
 			}
 		}
 	}
 
 	pub fn flip_phase(&mut self) {
-		let new_phase = if self.phase == 0 { 1 } else { 0 };
-		self.phase = new_phase;
+		let new_phase = if self.gl.crt_phase == 0 { 1 } else { 0 };
+		self.gl.crt_phase = new_phase;
 	}
 
 	pub fn render(&self) {
-		let ph1 = self.phase;
-		let ph2 = if self.phase == 0 { 1 } else { 0 };
+		let ph1 = self.gl.crt_phase;
+		let ph2 = if self.gl.crt_phase == 0 { 1 } else { 0 };
 
 		unsafe {
-			self.fb_beam.bind();
-			let p = font_program.unwrap();
-			gl::UseProgram(p);
+			self.gl.beam_fb[0].bind();
+			let beam_prog = font_program.unwrap();
+			gl::UseProgram(beam_prog);
 			gl::ActiveTexture(gl::TEXTURE0);
 			gl::BindTexture(gl::TEXTURE_2D,self.font.gl_texture);
 			gl::ActiveTexture(gl::TEXTURE1);
-			gl::BindTexture(gl::TEXTURE_2D,self.data_texture);
-			glutil::update_byte_tex(self.dim.0 as i32, 
-			self.dim.1 as i32, self.data.as_slice());
-			gl::BindVertexArray(self.vao);
+			gl::BindTexture(gl::TEXTURE_2D,self.gl.data_texture);
+			glutil::update_byte_tex(self.term_dim.0, self.term_dim.1, self.data.as_slice());
+			gl::BindVertexArray(self.gl.beam_vao);
 			// Set uniforms
-            gl::Uniform1f(glutil::uni_loc(p,"scan_coverage"), self.options.scan_coverage);
-            gl::Uniform1f(glutil::uni_loc(p,"scan_height"), 1.0 / self.font.cell_size.1 as f32);
-            gl::Uniform1f(glutil::uni_loc(p,"font_char_count"), (self.font.bounds.1 - self.font.bounds.0) as f32);
-            gl::Uniform1f(glutil::uni_loc(p,"font_first_char"), self.font.bounds.0 as f32);
+            gl::Uniform1f(glutil::uni_loc(beam_prog,"scan_coverage"), self.options.scan_coverage);
+            gl::Uniform1f(glutil::uni_loc(beam_prog,"scan_height"), 1.0 / self.font.cell_size.1 as f32);
+            gl::Uniform1f(glutil::uni_loc(beam_prog,"font_char_count"), (self.font.bounds.1 - self.font.bounds.0) as f32);
+            gl::Uniform1f(glutil::uni_loc(beam_prog,"font_first_char"), self.font.bounds.0 as f32);
             let ref fg = self.options.fg_color;
             let ref bg = self.options.bg_color;
-            gl::Uniform4f(glutil::uni_loc(p,"fg_color"), 
+            gl::Uniform4f(glutil::uni_loc(beam_prog,"fg_color"), 
             	fg.r, fg.g, fg.b, fg.a);
-            gl::Uniform4f(glutil::uni_loc(p,"bg_color"), 
+            gl::Uniform4f(glutil::uni_loc(beam_prog,"bg_color"), 
             	0.0,0.0,0.0,0.0);
             // Draw triangles
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
-			self.fb_beam.unbind();
-			self.fbs[ph2].bind();
-			let p2 = crt_program.unwrap();
-			gl::UseProgram(p2);
+			self.gl.beam_fb[0].unbind();
+			self.gl.crt_fb[ph2].bind();
+			let crt_prog = crt_program.unwrap();
+			gl::UseProgram(crt_prog);
 			gl::ActiveTexture(gl::TEXTURE0);
-			gl::BindTexture(gl::TEXTURE_2D,self.fbs[ph1].texture_obj());
+			gl::BindTexture(gl::TEXTURE_2D,self.gl.crt_fb[ph1].texture_obj());
 			gl::ActiveTexture(gl::TEXTURE1);
-			gl::BindTexture(gl::TEXTURE_2D,self.fb_beam.texture_obj());
-			gl::BindVertexArray(self.vao2);
+			gl::BindTexture(gl::TEXTURE_2D,self.gl.beam_fb[0].texture_obj());
+			gl::BindVertexArray(self.gl.crt_vao);
 			// Set uniforms
-            gl::Uniform1f(glutil::uni_loc(p2,"decay_factor"), 0.15);
-            gl::Uniform4f(glutil::uni_loc(p2,"bg_color"), 
+            gl::Uniform1f(glutil::uni_loc(crt_prog,"decay_factor"), 0.15);
+            gl::Uniform4f(glutil::uni_loc(crt_prog,"bg_color"), 
             	bg.r, bg.g, bg.b, bg.a);
             // Draw triangles
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
-			self.fbs[ph2].unbind();
+			self.gl.crt_fb[ph2].unbind();
 			// Blit to window
 			gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER,0);
-			gl::BindFramebuffer(gl::READ_FRAMEBUFFER,self.fbs[ph2].fbo);
+			gl::BindFramebuffer(gl::READ_FRAMEBUFFER,self.gl.crt_fb[ph2].fbo);
 			gl::BlitFramebuffer(0,0,self.render_dim.0, self.render_dim.1,
 				0,0,self.render_dim.0, self.render_dim.1,
 				gl::COLOR_BUFFER_BIT,gl::LINEAR);
-			gl::BindFramebuffer(gl::READ_FRAMEBUFFER,self.fb_beam.fbo);
+			//gl::BindFramebuffer(gl::READ_FRAMEBUFFER,self.fb_beam.fbo);
 		}
 	}
 }
