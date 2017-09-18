@@ -15,6 +15,8 @@ static BLOOM_FS_SRC: &'static str = include_str!("bloom_fragment.glsl");
 static CRT_VS_SRC: &'static str = include_str!("crt_vertex.glsl");
 static CRT_FS_SRC: &'static str = include_str!("crt_fragment.glsl");
 
+static GAUSSIAN_WEIGHTS : [GLfloat;5] = [0.06136,0.24477,0.38774,0.24477,0.06136];
+
 static mut beam_program : GLuint = 0;
 static mut bloom_program : GLuint = 0;
 static mut crt_program : GLuint = 0;
@@ -255,6 +257,28 @@ impl<'a> Terminal<'a> {
 		self.gl.crt_phase = new_phase;
 	}
 
+	fn gaussian_blur(&self) {
+		let pixw = 2.0 / self.render_dim.0 as f32;
+		let pixh = 2.0 / self.render_dim.1 as f32;
+		unsafe {
+			// Horizontal blur
+			self.gl.beam_fb[1].bind();
+			gl::UseProgram(bloom_program);
+			gl::Uniform2f(glutil::uni_loc(bloom_program,"offset"),pixw,0.0);
+			gl::Uniform1fv(glutil::uni_loc(bloom_program,"weights"),5,&GAUSSIAN_WEIGHTS as *const _);
+			gl::ActiveTexture(gl::TEXTURE0);
+			gl::BindTexture(gl::TEXTURE_2D,self.gl.beam_fb[0].texture_obj());
+			gl::BindVertexArray(self.gl.crt_vao);
+			gl::DrawArrays(gl::TRIANGLE_STRIP,0,4);
+			// Vertical blur
+			self.gl.beam_fb[0].bind();
+			gl::BindTexture(gl::TEXTURE_2D,self.gl.beam_fb[1].texture_obj());
+			gl::Uniform2f(glutil::uni_loc(bloom_program,"offset"),0.0,pixh);
+			gl::DrawArrays(gl::TRIANGLE_STRIP,0,4);			
+		}
+
+	}
+
 	pub fn render(&self) {
 		// Set up CRT phases (we blend with previous render, which decays phosphor-style)
 		let ph1 = self.gl.crt_phase;
@@ -284,6 +308,7 @@ impl<'a> Terminal<'a> {
 			gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
 			self.gl.beam_fb[0].unbind();
 			// Bloom on beam
+			self.gaussian_blur();
 
 			self.gl.crt_fb[ph2].bind();
 			gl::UseProgram(crt_program);

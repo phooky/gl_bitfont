@@ -19,7 +19,7 @@ fn main() {
 	window.make_current();
 	let f = gl_bitfont::osborne_font();
 	let mut t = gl_bitfont::Terminal::new((20,12),(ww, wh),&f);
-	t.options.scan_coverage = 0.4;
+	t.options.scan_coverage = 0.2;
 	window.set_key_polling(true);
 	let text = include_str!("jabberwocky.txt");
 	let mut text_iter = text.chars();
